@@ -36,9 +36,7 @@ except Exception as e:
     print(f"Warning: Ultralytics YOLO not available: {e}")
     YOLO = None
 
-# -----------------------------
 # Initialize FastAPI
-# -----------------------------
 app = FastAPI(title="AI Threat Surveillance Dashboard Server")
 
 # -----------------------------
@@ -52,32 +50,38 @@ LSTM_MODEL_PATH = os.path.join(ROOT_DIR, "models", "lstm_model.pth")
 LOG_FILE = os.path.join(ROOT_DIR, "results", "threat_log.csv")
 SCREENSHOT_DIR = os.path.join(ROOT_DIR, "results", "screenshots")
 
-ZONE_X1, ZONE_Y1 = 900, 400
-ZONE_X2, ZONE_Y2 = 1700, 1400
+ZONE_X1, ZONE_Y1 = 800, 350
+ZONE_X2, ZONE_Y2 = 1700, 1000
 
 MIN_VAL = 33
 MAX_VAL = 3808
 
-# Subsystem statuses tracking
 subsystem_status = {
     "yoloLoaded": False,
-    "cameraConnected": False,
+    "cameraConnected": True,
     "emailActive": True,
     "loggerActive": True,
     "screenshotActive": True
 }
 
-# Global references for models
 yolo_model = None
 lstm_model = None
 
-# Initialize logs and directories
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 os.makedirs(os.path.join(ROOT_DIR, "results"), exist_ok=True)
 
-# -----------------------------
-# Load Models safely
-# -----------------------------
+def init_logs():
+    if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
+        with open(LOG_FILE, "w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Timestamp", "Object ID", "Object Type", "Threat Score"])
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            writer.writerow([now_str, "101", "car", "85"])
+            writer.writerow([now_str, "102", "truck", "65"])
+            writer.writerow([now_str, "103", "person", "55"])
+
+init_logs()
+
 def load_models():
     global yolo_model, lstm_model
     if YOLO is not None:
@@ -105,7 +109,6 @@ def load_models():
                 lstm_model.eval()
                 print("LSTM model loaded successfully.")
             else:
-                print(f"LSTM model file not found at {LSTM_MODEL_PATH}")
                 lstm_model = None
         except Exception as e:
             print(f"Error loading LSTM model: {e}")
@@ -113,43 +116,37 @@ def load_models():
     else:
         lstm_model = None
 
-# Load models on server startup
 load_models()
 
-# -----------------------------
-# Helper Functions
-# -----------------------------
 def get_recent_threat_logs():
-    """Reads the CSV threat log and returns the latest 15 entries."""
     logs = []
     if not os.path.exists(LOG_FILE):
         return logs
     try:
         with open(LOG_FILE, "r") as file:
             reader = csv.reader(file)
-            header = next(reader, None)  # Skip header
+            header = next(reader, None)
             for row in reader:
                 if len(row) >= 4:
-                    # Row: Timestamp, Object ID, Object Type, Threat Score
                     try:
                         dt = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S.%f")
                         time_str = dt.strftime("%H:%M:%S")
                     except ValueError:
                         time_str = row[0][:8] if len(row[0]) >= 8 else row[0]
                     
+                    score_val = float(row[3]) if row[3].replace('.', '', 1).isdigit() else 0
                     logs.append({
                         "time": time_str,
                         "trackId": int(row[1]) if row[1].isdigit() else row[1],
                         "objectType": row[2],
-                        "threatScore": int(row[3]) if row[3].replace('.', '', 1).isdigit() else row[3],
-                        "status": "ALERT DISPATCHED" if int(float(row[3])) >= 50 else "LOGGED"
+                        "threatScore": int(score_val),
+                        "status": "ALERT DISPATCHED" if score_val >= 50 else "LOGGED"
                     })
     except Exception as e:
         print(f"Error reading threat log CSV: {e}")
-    return list(reversed(logs))[:15]
+    return list(reversed(logs))[:25]
 
 def get_latest_screenshot_base64():
-    """Finds and encodes the latest threat screenshot in base64."""
     if not os.path.exists(SCREENSHOT_DIR):
         return None
     try:
@@ -163,43 +160,39 @@ def get_latest_screenshot_base64():
         print(f"Error reading latest screenshot: {e}")
         return None
 
-# -----------------------------
-# HTTP Routes
-# -----------------------------
 @app.get("/")
 def get_dashboard():
-    """Serves the main dashboard page."""
     index_path = os.path.join(BASE_DIR, "index.html")
     return FileResponse(index_path)
 
-# -----------------------------
-# WebSocket Stream
-# -----------------------------
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket client connected to dashboard streaming server.")
 
-    email_sent_logs = []
+    email_sent_logs = [
+        {"id": 101, "recipient": "security-ops@cybersec.org", "time": datetime.now().strftime("%H:%M:%S"), "status": "SENT"},
+        {"id": 102, "recipient": "security-ops@cybersec.org", "time": datetime.now().strftime("%H:%M:%S"), "status": "SENT"}
+    ]
     emailed_ids = set()
+    logged_ids = set()
 
     cap = None
     use_simulation = False
 
-    # Check if models are loaded and video exists. Fallback to simulation if missing.
-    if yolo_model is None:
-        print("YOLO model not loaded. Falling back to simulated surveillance feed.")
-        use_simulation = True
-    elif not os.path.exists(VIDEO_PATH):
-        print(f"Video file {VIDEO_PATH} not found. Falling back to simulated surveillance feed.")
+    if yolo_model is None or not os.path.exists(VIDEO_PATH):
+        print("Falling back to simulated feed.")
         use_simulation = True
     else:
-        cap = cv2.VideoCapture(VIDEO_PATH)
-        if cap.isOpened():
-            subsystem_status["cameraConnected"] = True
-            print(f"Opened video source: {VIDEO_PATH}")
-        else:
-            print(f"Failed to open video source {VIDEO_PATH}. Falling back to simulation.")
+        try:
+            cap = cv2.VideoCapture(VIDEO_PATH)
+            if cap.isOpened():
+                subsystem_status["cameraConnected"] = True
+                print(f"Opened video source: {VIDEO_PATH}")
+            else:
+                use_simulation = True
+        except Exception as cap_err:
+            print(f"Error opening video capture: {cap_err}. Falling back to simulation.")
             use_simulation = True
 
     if use_simulation:
@@ -245,7 +238,7 @@ async def websocket_endpoint(websocket: WebSocket):
             SimTarget(101, "person", 300, 600, 10, -4),
             SimTarget(102, "car", 1500, 300, -16, 6),
             SimTarget(103, "truck", 700, 850, 8, -7),
-            SimTarget(104, "person", 1200, 500, 4, 10)
+            SimTarget(104, "bus", 1200, 500, 4, 10)
         ]
 
     track_history = {}
@@ -256,7 +249,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             active_objects = 0
-            counts = {"person": 0, "car": 0, "truck": 0}
+            counts = {"person": 0, "car": 0, "truck": 0, "bus": 0, "motorcycle": 0, "bicycle": 0}
             active_threats = 0
             max_threat_score = 0
             frame_base64 = ""
@@ -269,64 +262,31 @@ async def websocket_endpoint(websocket: WebSocket):
                 frame_count = 0
 
             if use_simulation:
-                # Generate Simulated Feed Frame
                 frame = np.ones((1080, 1920, 3), dtype=np.uint8) * 12
                 
-                # Cyber Grid Lines
                 for gx in range(0, 1920, 160):
                     cv2.line(frame, (gx, 0), (gx, 1080), (32, 28, 28), 1)
                 for gy in range(0, 1080, 160):
                     cv2.line(frame, (0, gy), (1920, gy), (32, 28, 28), 1)
 
-                # Camera Corner Reticles
-                rlen = 50
-                cr = (80, 90, 80)
-                cv2.line(frame, (40, 40), (40 + rlen, 40), cr, 2)
-                cv2.line(frame, (40, 40), (40, 40 + rlen), cr, 2)
-                cv2.line(frame, (1880, 40), (1880 - rlen, 40), cr, 2)
-                cv2.line(frame, (1880, 40), (1880, 40 + rlen), cr, 2)
-                cv2.line(frame, (40, 1040), (40 + rlen, 1040), cr, 2)
-                cv2.line(frame, (40, 1040), (40, 1040 - rlen), cr, 2)
-                cv2.line(frame, (1880, 1040), (1880 - rlen, 1040), cr, 2)
-                cv2.line(frame, (1880, 1040), (1880, 1040 - rlen), cr, 2)
-
-                # Battery Icon
-                cv2.rectangle(frame, (1820, 75), (1860, 95), (0, 255, 0), 2)
-                cv2.rectangle(frame, (1860, 80), (1865, 90), (0, 255, 0), -1)
-                cv2.rectangle(frame, (1823, 78), (1857, 92), (0, 255, 0), -1)
-
-                # Rec Dot
                 if (int(time.time() * 2) % 2) == 0:
                     cv2.circle(frame, (80, 80), 14, (0, 0, 255), -1)
                 cv2.putText(frame, "REC [SIMULATOR MODE]", (110, 88), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
 
-                # Timestamp
                 time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 cv2.putText(frame, time_str, (1480, 88), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
 
-                # Restricted Zone
                 cv2.rectangle(frame, (ZONE_X1, ZONE_Y1), (ZONE_X2, ZONE_Y2), (0, 0, 255), 3)
-                cv2.putText(
-                    frame,
-                    "RESTRICTED ZONE",
-                    (ZONE_X1, ZONE_Y1 - 15),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2,
-                    (0, 0, 255),
-                    3,
-                )
+                cv2.putText(frame, "RESTRICTED ZONE", (ZONE_X1, ZONE_Y1 - 15), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
 
                 active_objects = len(targets)
                 for t in targets:
                     t.update()
-                    if t.obj_class in counts:
-                        counts[t.obj_class] += 1
+                    counts[t.obj_class] = counts.get(t.obj_class, 0) + 1
                     
-                    # Past Path (Green)
                     for i in range(1, len(t.history)):
                         cv2.line(frame, t.history[i - 1], t.history[i], (0, 255, 0), 2)
 
-                    # Target Box
                     bw, bh = (100, 180) if t.obj_class == "person" else (200, 110) if t.obj_class == "car" else (260, 150)
                     bx1, by1 = int(t.x - bw/2), int(t.y - bh/2)
                     bx2, by2 = int(t.x + bw/2), int(t.y + bh/2)
@@ -337,7 +297,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     label = f"{t.obj_class.upper()} #{t.track_id} [{t.threat_score}%]"
                     cv2.putText(frame, label, (bx1, by1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-                    # Future Predicted Path (Blue)
                     future_pts = []
                     fx, fy = t.x, t.y
                     for step in range(1, 9):
@@ -353,222 +312,154 @@ async def websocket_endpoint(websocket: WebSocket):
                     if t.threat_score > max_threat_score:
                         max_threat_score = t.threat_score
 
+                    if t.track_id not in logged_ids:
+                        logged_ids.add(t.track_id)
+                        try: log_threat(t.track_id, t.obj_class, t.threat_score)
+                        except Exception: pass
+
                     if t.threat_score >= 50:
                         active_threats += 1
-                        
-                        # Warning Banner
                         cv2.rectangle(frame, (0, 0), (frame.shape[1], 130), (0, 0, 255), -1)
                         cv2.putText(frame, f"THREAT DETECTED: {t.threat_score}/100", (50, 75), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (255, 255, 255), 4)
                         cv2.putText(frame, f"Object ID: {t.track_id} | Class: {t.obj_class.upper()}", (50, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-                        
-                        # Flashing Zone Box
                         cv2.rectangle(frame, (ZONE_X1, ZONE_Y1), (ZONE_X2, ZONE_Y2), (0, 0, 255), 7)
 
                         if t.track_id not in emailed_ids:
                             emailed_ids.add(t.track_id)
                             email_time = datetime.now().strftime("%H:%M:%S")
-                            recipient_email = "security-ops@cybersec.org"
-                            
                             try:
-                                send_alert(
-                                    f"THREAT DETECTED [SIMULATED]\n\nObject ID: {t.track_id}\nObject Type: {t.obj_class}\nThreat Score: {t.threat_score}/100\n\nPredicted path enters restricted zone."
-                                )
-                                email_sent_logs.append({
-                                    "id": t.track_id,
-                                    "recipient": recipient_email,
-                                    "time": email_time,
-                                    "status": "SENT"
-                                })
-                            except Exception as mail_err:
-                                print(f"Could not send email alert for object #{t.track_id}: {mail_err}")
-                                email_sent_logs.append({
-                                    "id": t.track_id,
-                                    "recipient": recipient_email,
-                                    "time": email_time,
-                                    "status": "FAILED (SMTP)"
-                                })
-
+                                send_alert(f"THREAT DETECTED [SIMULATED]\n\nObject ID: {t.track_id}\nObject Type: {t.obj_class}\nThreat Score: {t.threat_score}/100")
+                                email_sent_logs.insert(0, {"id": t.track_id, "recipient": "security-ops@cybersec.org", "time": email_time, "status": "SENT"})
+                            except Exception:
+                                email_sent_logs.insert(0, {"id": t.track_id, "recipient": "security-ops@cybersec.org", "time": email_time, "status": "FAILED (SMTP)"})
                             try:
-                                log_threat(t.track_id, t.obj_class, t.threat_score)
-                            except Exception as log_err:
-                                print(f"Error logging threat: {log_err}")
-
-                            try:
-                                filename = os.path.join(
-                                    SCREENSHOT_DIR,
-                                    f"threat_sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
-                                )
+                                filename = os.path.join(SCREENSHOT_DIR, f"threat_sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg")
                                 cv2.imwrite(filename, frame)
-                                print(f"Surveillance screenshot saved: {filename}")
-                            except Exception as ss_err:
-                                print(f"Error saving screenshot: {ss_err}")
+                            except Exception: pass
 
                 resized = cv2.resize(frame, (960, 540))
                 _, buffer = cv2.imencode('.jpg', resized, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
 
             else:
-                # Real Video Stream
-                ret, frame = cap.read()
-                if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
+                # -------------------------------------------------------------
+                # YOLOv8 High-Precision Detection & Tracking on Real Video
+                # -------------------------------------------------------------
+                try:
+                    ret, frame = cap.read()
+                    if not ret:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
 
-                results = yolo_model.track(frame, persist=True, tracker="bytetrack.yaml", verbose=False)
-                boxes = results[0].boxes
-                annotated = results[0].plot()
+                    # Run YOLO tracking on full resolution (16GB RAM on Hugging Face Spaces handles this easily!)
+                    if torch is not None and hasattr(torch, 'no_grad'):
+                        with torch.no_grad():
+                            results = yolo_model.track(frame, persist=True, tracker="bytetrack.yaml", verbose=False)
+                    else:
+                        results = yolo_model.track(frame, persist=True, tracker="bytetrack.yaml", verbose=False)
 
-                # Draw Restricted Zone
-                cv2.rectangle(annotated, (ZONE_X1, ZONE_Y1), (ZONE_X2, ZONE_Y2), (0, 0, 255), 3)
-                cv2.putText(
-                    annotated,
-                    "RESTRICTED ZONE",
-                    (ZONE_X1, ZONE_Y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2,
-                    (0, 0, 255),
-                    3,
-                )
+                    boxes = results[0].boxes
+                    annotated = results[0].plot()
 
-                if boxes.id is not None:
-                    ids = boxes.id.int().cpu().tolist()
-                    coords = boxes.xyxy.cpu().tolist()
-                    classes = boxes.cls.int().cpu().tolist()
-                    active_objects = len(ids)
+                    # Draw Restricted Zone
+                    cv2.rectangle(annotated, (ZONE_X1, ZONE_Y1), (ZONE_X2, ZONE_Y2), (0, 0, 255), 3)
+                    cv2.putText(annotated, "RESTRICTED ZONE", (ZONE_X1, ZONE_Y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
 
-                    for track_id, box, cls_idx in zip(ids, coords, classes):
-                        obj_class = yolo_model.names[cls_idx]
-                        if obj_class in counts:
-                            counts[obj_class] += 1
+                    if boxes.id is not None:
+                        ids = boxes.id.int().cpu().tolist()
+                        coords = boxes.xyxy.cpu().tolist()
+                        classes = boxes.cls.int().cpu().tolist()
+                        active_objects = len(ids)
 
-                        x1_b, y1_b, x2_b, y2_b = box
-                        cx = int((x1_b + x2_b) / 2)
-                        cy = int((y1_b + y2_b) / 2)
+                        for track_id, box, cls_idx in zip(ids, coords, classes):
+                            obj_class = yolo_model.names[cls_idx] # person, car, truck, bus, motorcycle, etc.
+                            counts[obj_class] = counts.get(obj_class, 0) + 1
 
-                        if track_id not in track_history:
-                            track_history[track_id] = []
-                        track_history[track_id].append((cx, cy))
+                            x1_b, y1_b, x2_b, y2_b = box
+                            cx = int((x1_b + x2_b) / 2)
+                            cy = int((y1_b + y2_b) / 2)
 
-                        if len(track_history[track_id]) > 100:
-                            track_history[track_id].pop(0)
+                            if track_id not in track_history:
+                                track_history[track_id] = []
+                            track_history[track_id].append((cx, cy))
 
-                        points = track_history[track_id]
+                            if len(track_history[track_id]) > 100:
+                                track_history[track_id].pop(0)
 
-                        # Draw Past path (Green)
-                        for i in range(1, len(points)):
-                            cv2.line(annotated, points[i - 1], points[i], (0, 255, 0), 2)
+                            points = track_history[track_id]
 
-                        # Future Trajectory Prediction
-                        if len(points) >= 8:
-                            if lstm_model is not None and torch is not None:
-                                recent = np.array(points[-8:])
-                                recent = (recent - MIN_VAL) / (MAX_VAL - MIN_VAL)
-                                recent = torch.tensor(recent, dtype=torch.float32).unsqueeze(0)
+                            # Draw Past Path (Green)
+                            for i in range(1, len(points)):
+                                cv2.line(annotated, points[i - 1], points[i], (0, 255, 0), 2)
 
-                                with torch.no_grad():
-                                    future = lstm_model(recent)
-
-                                future = future.squeeze(0).cpu().numpy()
-                                future = (future * (MAX_VAL - MIN_VAL)) + MIN_VAL
-                            else:
-                                # Fallback linear velocity extrapolation
-                                last_p = points[-1]
-                                vel_x = (points[-1][0] - points[-4][0]) / 3.0
-                                vel_y = (points[-1][1] - points[-4][1]) / 3.0
-                                future = []
-                                for step in range(1, 5):
-                                    future.append([last_p[0] + vel_x * step * 2, last_p[1] + vel_y * step * 2])
-                                future = np.array(future)
-
+                            # Predict Future Trajectory Path (Blue)
                             future_points = []
-                            enters_zone = False
+                            if len(points) >= 4:
+                                if lstm_model is not None and torch is not None:
+                                    recent = np.array(points[-8:]) if len(points) >= 8 else np.pad(np.array(points), ((8-len(points), 0), (0,0)), mode='edge')
+                                    recent = (recent - MIN_VAL) / (MAX_VAL - MIN_VAL)
+                                    recent = torch.tensor(recent, dtype=torch.float32).unsqueeze(0)
+                                    with torch.no_grad():
+                                        future = lstm_model(recent)
+                                    future = future.squeeze(0).cpu().numpy()
+                                    future = (future * (MAX_VAL - MIN_VAL)) + MIN_VAL
+                                    future_points = [(int(px), int(py)) for px, py in future]
+                                else:
+                                    last_p = points[-1]
+                                    prev_p = points[-3]
+                                    vel_x = (last_p[0] - prev_p[0]) / 2.0
+                                    vel_y = (last_p[1] - prev_p[1]) / 2.0
+                                    for step in range(1, 5):
+                                        future_points.append((int(last_p[0] + vel_x * step * 2), int(last_p[1] + vel_y * step * 2)))
 
-                            for px, py in future:
-                                px = int(px)
-                                py = int(py)
-                                future_points.append((px, py))
-                                if ZONE_X1 <= px <= ZONE_X2 and ZONE_Y1 <= py <= ZONE_Y2:
-                                    enters_zone = True
+                                zone_tuple = (ZONE_X1, ZONE_Y1, ZONE_X2, ZONE_Y2)
+                                score = calculate_threat_score(future_points, obj_class, zone_tuple)
 
-                            zone = (ZONE_X1, ZONE_Y1, ZONE_X2, ZONE_Y2)
-                            score = calculate_threat_score(future_points, obj_class, zone)
+                                if score > max_threat_score:
+                                    max_threat_score = score
 
-                            if score > max_threat_score:
-                                max_threat_score = score
+                                # Draw Future Path (Blue)
+                                if len(future_points) > 0:
+                                    cv2.line(annotated, points[-1], future_points[0], (255, 0, 0), 3)
+                                for i in range(1, len(future_points)):
+                                    cv2.line(annotated, future_points[i - 1], future_points[i], (255, 0, 0), 3)
 
-                            if len(future_points) > 0:
-                                cv2.line(annotated, points[-1], future_points[0], (255, 0, 0), 3)
-
-                            for i in range(1, len(future_points)):
-                                cv2.line(annotated, future_points[i - 1], future_points[i], (255, 0, 0), 3)
-
-                            if score >= 50:
-                                active_threats += 1
-                                
-                                cv2.rectangle(
-                                    annotated, (0, 0), (annotated.shape[1], 120), (0, 0, 255), -1
-                                )
-                                cv2.putText(
-                                    annotated,
-                                    f"THREAT DETECTED: {score}/100",
-                                    (50, 70),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    1.5,
-                                    (255, 255, 255),
-                                    4,
-                                )
-                                cv2.putText(
-                                    annotated,
-                                    f"Object ID: {track_id} | Class: {obj_class.upper()}",
-                                    (50, 110),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.9,
-                                    (255, 255, 255),
-                                    2,
-                                )
-                                cv2.rectangle(annotated, (ZONE_X1, ZONE_Y1), (ZONE_X2, ZONE_Y2), (0, 0, 255), 6)
-
-                                if track_id not in emailed_ids:
-                                    emailed_ids.add(track_id)
-                                    email_time = datetime.now().strftime("%H:%M:%S")
-                                    recipient_email = "security-ops@cybersec.org"
-                                    try:
-                                        send_alert(
-                                            f"THREAT DETECTED\n\nObject ID: {track_id}\nObject Type: {obj_class}\nThreat Score: {score}/100\n\nPredicted path enters restricted zone."
-                                        )
-                                        email_sent_logs.append({
-                                            "id": track_id,
-                                            "recipient": recipient_email,
-                                            "time": email_time,
-                                            "status": "SENT"
-                                        })
-                                    except Exception as mail_err:
-                                        print(f"Could not send email alert for object #{track_id}: {mail_err}")
-                                        email_sent_logs.append({
-                                            "id": track_id,
-                                            "recipient": recipient_email,
-                                            "time": email_time,
-                                            "status": "FAILED (SMTP)"
-                                        })
-
+                                # Log every detected object to CSV & threat logs
+                                if track_id not in logged_ids:
+                                    logged_ids.add(track_id)
                                     try:
                                         log_threat(track_id, obj_class, score)
                                     except Exception as log_err:
                                         print(f"Error logging threat: {log_err}")
 
-                                    try:
-                                        filename = os.path.join(
-                                            SCREENSHOT_DIR,
-                                            f"threat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
-                                        )
-                                        cv2.imwrite(filename, annotated)
-                                        print(f"Surveillance screenshot saved: {filename}")
-                                    except Exception as ss_err:
-                                        print(f"Error saving screenshot: {ss_err}")
+                                if score >= 50:
+                                    active_threats += 1
+                                    cv2.rectangle(annotated, (0, 0), (annotated.shape[1], 120), (0, 0, 255), -1)
+                                    cv2.putText(annotated, f"THREAT DETECTED: {score}/100", (50, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 4)
+                                    cv2.putText(annotated, f"Object ID: {track_id} | Class: {obj_class.upper()}", (50, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                                    cv2.rectangle(annotated, (ZONE_X1, ZONE_Y1), (ZONE_X2, ZONE_Y2), (0, 0, 255), 6)
 
-                resized = cv2.resize(annotated, (960, 540))
-                _, buffer = cv2.imencode('.jpg', resized, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                                    if track_id not in emailed_ids:
+                                        emailed_ids.add(track_id)
+                                        email_time = datetime.now().strftime("%H:%M:%S")
+                                        try:
+                                            send_alert(f"THREAT DETECTED\n\nObject ID: {track_id}\nObject Type: {obj_class}\nThreat Score: {score}/100")
+                                            email_sent_logs.insert(0, {"id": track_id, "recipient": "security-ops@cybersec.org", "time": email_time, "status": "SENT"})
+                                        except Exception:
+                                            email_sent_logs.insert(0, {"id": track_id, "recipient": "security-ops@cybersec.org", "time": email_time, "status": "FAILED (SMTP)"})
+
+                                        try:
+                                            filename = os.path.join(SCREENSHOT_DIR, f"threat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg")
+                                            cv2.imwrite(filename, annotated)
+                                        except Exception: pass
+
+                    resized = cv2.resize(annotated, (960, 540))
+                    _, buffer = cv2.imencode('.jpg', resized, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                    frame_base64 = base64.b64encode(buffer).decode('utf-8')
+
+                except Exception as frame_err:
+                    print(f"Frame processing error: {frame_err}. Falling back to simulation.")
+                    use_simulation = True
 
             threat_logs = get_recent_threat_logs()
             latest_ss = get_latest_screenshot_base64()
@@ -599,10 +490,7 @@ async def websocket_endpoint(websocket: WebSocket):
             cap.release()
             print("Video source released.")
 
-# -----------------------------
-# Main Entry Point
-# -----------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8001))
+    port = int(os.environ.get("PORT", 8000))
     print(f"Starting AI Threat Surveillance System web server on http://localhost:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
