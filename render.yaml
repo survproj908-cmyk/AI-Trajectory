@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ai-threat-surveillance-dashboard
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PORT
+        value: 8000

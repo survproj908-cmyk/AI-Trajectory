@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Threat Surveillance Dashboard</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['Orbitron', 'monospace'],
+          },
+          colors: {
+            cyber: {
+              bg: '#030712',
+              card: 'rgba(17, 24, 39, 0.7)',
+              border: 'rgba(59, 130, 246, 0.2)',
+              borderAlert: 'rgba(239, 68, 68, 0.4)',
+              blue: '#3b82f6',
+              red: '#ef4444',
+              green: '#10b981',
+              cyan: '#06b6d4',
+              glow: 'rgba(59, 130, 246, 0.15)',
+              glowRed: 'rgba(239, 68, 68, 0.25)',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & Babel CDNs -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- ApexCharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+
+  <style>
+    body {
+      background-color: #030712;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(17, 24, 39, 0.8) 0, transparent 50%),
+        radial-gradient(at 50% 0%, rgba(59, 130, 246, 0.08) 0, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(239, 68, 68, 0.05) 0, transparent 50%);
+      background-attachment: fixed;
+      overflow-x: hidden;
+    }
+
+    /* Glassmorphism custom classes */
+    .glass-card {
+      background: rgba(10, 15, 30, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(59, 130, 246, 0.15);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .glass-card:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+      box-shadow: 0 8px 32px 0 rgba(59, 130, 246, 0.1);
+    }
+
+    .glass-card-alert {
+      background: rgba(24, 10, 15, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      box-shadow: 0 8px 32px 0 rgba(239, 68, 68, 0.15);
+      animation: alert-pulse 2s infinite alternate;
+    }
+
+    @keyframes alert-pulse {
+      0% {
+        border-color: rgba(239, 68, 68, 0.3);
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+      }
+      100% {
+        border-color: rgba(239, 68, 68, 0.6);
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.3);
+      }
+    }
+
+    /* Pulse effect */
+    .pulse-dot {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(0.9);
+        opacity: 0.6;
+      }
+      50% {
+        transform: scale(1.1);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(0.9);
+        opacity: 0.6;
+      }
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(10, 15, 30, 0.5);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(59, 130, 246, 0.3);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(59, 130, 246, 0.5);
+    }
+  </style>
+</head>
+<body class="text-gray-100 font-sans min-h-screen flex flex-col antialiased">
+
+  <div id="root" class="flex-grow flex flex-col"></div>
+
+  <!-- React Code with Babel -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Beautiful SVG icons helper to avoid loading Lucide globally and losing state
+    const Icons = {
+      Camera: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+      ),
+      Shield: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      ),
+      Users: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      ),
+      Car: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="22" height="13" rx="2" ry="2"/><path d="M5 21h0a2 2 0 0 1-2-2v-2h18v2a2 2 0 0 1-2 2h0"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/></svg>
+      ),
+      Truck: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      ),
+      AlertTriangle: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      ),
+      Activity: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      ),
+      Bell: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      ),
+      Image: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      ),
+      Mail: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      )
+    };
+
+    function Dashboard() {
+      // System States
+      const [currentDateTime, setCurrentDateTime] = useState(new Date().toLocaleString());
+      const [isLive, setIsLive] = useState(false);
+      const [simulationActive, setSimulationActive] = useState(true);
+      const [wsStatus, setWsStatus] = useState("DISCONNECTED");
+      const [activeTab, setActiveTab] = useState("logs"); // logs, email, screenshot
+      const [showLightbox, setShowLightbox] = useState(false);
+      
+      // Live CV States
+      const [stats, setStats] = useState({
+        activeObjects: 0,
+        persons: 0,
+        cars: 0,
+        trucks: 0,
+        activeThreats: 0,
+        maxThreatScore: 0,
+        fps: 0,
+      });
+
+      const [threatLogs, setThreatLogs] = useState([]);
+      const [emailLogs, setEmailLogs] = useState([]);
+      const [latestScreenshot, setLatestScreenshot] = useState(null);
+      const [liveFrame, setLiveFrame] = useState(null);
+      
+      // Services Status indicators
+      const [services, setServices] = useState({
+        yoloLoaded: true,
+        cameraConnected: true,
+        emailActive: true,
+        loggerActive: true,
+        screenshotActive: true,
+      });
+
+      // Refs
+      const socketRef = useRef(null);
+      const canvasRef = useRef(null);
+      const chartTimelineRef = useRef(null);
+      const chartStatsRef = useRef(null);
+      const timelineInstance = useRef(null);
+      const statsInstance = useRef(null);
+
+      // --- SIMULATION DATA HELPER ---
+      const simTargets = useRef([
+        { id: 101, type: "person", x: 100, y: 500, vx: 5, vy: -1.2, history: [], path: [], score: 10 },
+        { id: 102, type: "car", x: 200, y: 350, vx: 10, vy: 2.5, history: [], path: [], score: 25 },
+        { id: 103, type: "truck", x: 400, y: 550, vx: 7, vy: -2.0, history: [], path: [], score: 15 }
+      ]);
+      const simThreatScoreHistory = useRef(Array(20).fill(0));
+
+      // Clock Updater
+      useEffect(() => {
+        const timer = setInterval(() => {
+          setCurrentDateTime(new Date().toLocaleString());
+        }, 1000);
+        return () => clearInterval(timer);
+      }, []);
+
+      // Connect WebSocket
+      useEffect(() => {
+        function connect() {
+          setWsStatus("CONNECTING");
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${protocol}//${window.location.host}/ws`;
+          const ws = new WebSocket(wsUrl);
+          socketRef.current = ws;
+
+          ws.onopen = () => {
+            console.log("WebSocket connected to backend server.");
+            setWsStatus("CONNECTED");
+            setIsLive(true);
+            setSimulationActive(false);
+          };
+
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              
+              if (data.type === "telemetry") {
+                setStats({
+                  activeObjects: data.active_objects,
+                  persons: data.counts.person || 0,
+                  cars: data.counts.car || 0,
+                  trucks: data.counts.truck || 0,
+                  activeThreats: data.active_threats,
+                  maxThreatScore: data.max_threat_score,
+                  fps: data.fps
+                });
+
+                if (data.live_frame) {
+                  setLiveFrame(`data:image/jpeg;base64,${data.live_frame}`);
+                }
+                
+                if (data.threat_logs) {
+                  setThreatLogs(data.threat_logs);
+                }
+
+                if (data.email_logs) {
+                  setEmailLogs(data.email_logs);
+                }
+
+                if (data.latest_screenshot) {
+                  setLatestScreenshot(`data:image/jpeg;base64,${data.latest_screenshot}`);
+                }
+
+                setServices(data.services || {
+                  yoloLoaded: true,
+                  cameraConnected: true,
+                  emailActive: true,
+                  loggerActive: true,
+                  screenshotActive: true,
+                });
+
+                // Update charts with live threat score
+                updateLiveCharts(data.max_threat_score, data.counts);
+              }
+            } catch (err) {
+              console.error("Error processing websocket frame data:", err);
+            }
+          };
+
+          ws.onclose = () => {
+            console.warn("WebSocket connection lost. Reconnecting in 5 seconds...");
+            setWsStatus("DISCONNECTED");
+            setIsLive(false);
+            setSimulationActive(true); // Fallback to simulation
+            setTimeout(connect, 5000);
+          };
+
+          ws.onerror = (err) => {
+            console.error("WebSocket error:", err);
+            ws.close();
+          };
+        }
+
+        connect();
+
+        return () => {
+          if (socketRef.current) socketRef.current.close();
+        };
+      }, []);
+
+      // Initialize ApexCharts
+      useEffect(() => {
+        // Timeline Line Chart Config
+        const timelineOptions = {
+          chart: {
+            id: 'threat-timeline',
+            type: 'line',
+            height: 160,
+            animations: { enabled: true, easing: 'linear', dynamicAnimation: { speed: 800 } },
+            toolbar: { show: false },
+            background: 'transparent',
+            sparkline: { enabled: false }
+          },
+          stroke: { curve: 'smooth', width: 3, colors: ['#ef4444'] },
+          fill: {
+            type: 'gradient',
+            gradient: {
+              shade: 'dark',
+              type: 'vertical',
+              shadeIntensity: 0.5,
+              gradientToColors: ['#3b82f6'],
+              inverseColors: false,
+              opacityFrom: 0.8,
+              opacityTo: 0.1,
+              stops: [0, 90, 100]
+            }
+          },
+          series: [{ name: 'Threat Score', data: simThreatScoreHistory.current }],
+          xaxis: {
+            labels: { show: false },
+            axisBorder: { show: false },
+            axisTicks: { show: false }
+          },
+          yaxis: {
+            min: 0,
+            max: 100,
+            tickAmount: 4,
+            labels: { style: { colors: '#9ca3af', fontFamily: 'Inter' } }
+          },
+          grid: { borderColor: 'rgba(59, 130, 246, 0.15)', strokeDashArray: 4 },
+          tooltip: { theme: 'dark' }
+        };
+
+        // Donut Chart Config
+        const donutOptions = {
+          chart: {
+            id: 'detection-stats',
+            type: 'donut',
+            height: 160,
+            background: 'transparent',
+          },
+          labels: ['Persons', 'Cars', 'Trucks'],
+          colors: ['#06b6d4', '#3b82f6', '#8b5cf6'],
+          series: [1, 1, 1],
+          stroke: { show: false },
+          legend: {
+            position: 'right',
+            labels: { colors: '#9ca3af', fontFamily: 'Inter' },
+            markers: { radius: 12 }
+          },
+          dataLabels: { enabled: false },
+          plotOptions: {
+            pie: {
+              donut: {
+                size: '70%',
+                labels: {
+                  show: true,
+                  name: { show: true, fontSize: '12px', color: '#9ca3af', fontFamily: 'Inter' },
+                  value: { show: true, fontSize: '18px', color: '#fff', fontFamily: 'Orbitron', fontWeight: 'bold' },
+                  total: { show: true, label: 'Objects', color: '#9ca3af', formatter: (w) => w.globals.seriesTotals.reduce((a, b) => a + b, 0) }
+                }
+              }
+            }
+          },
+          tooltip: { theme: 'dark' }
+        };
+
+        if (chartTimelineRef.current) {
+          timelineInstance.current = new ApexCharts(chartTimelineRef.current, timelineOptions);
+          timelineInstance.current.render();
+        }
+
+        if (chartStatsRef.current) {
+          statsInstance.current = new ApexCharts(chartStatsRef.current, donutOptions);
+          statsInstance.current.render();
+        }
+
+        return () => {
+          if (timelineInstance.current) timelineInstance.current.destroy();
+          if (statsInstance.current) statsInstance.current.destroy();
+        };
+      }, []);
+
+      // Function to feed data into charts
+      const updateLiveCharts = (maxScore, counts) => {
+        // Update timeline
+        simThreatScoreHistory.current.push(maxScore);
+        if (simThreatScoreHistory.current.length > 20) {
+          simThreatScoreHistory.current.shift();
+        }
+        if (timelineInstance.current) {
+          timelineInstance.current.updateSeries([{ data: [...simThreatScoreHistory.current] }]);
+        }
+
+        // Update donut statistics
+        if (statsInstance.current) {
+          statsInstance.current.updateSeries([
+            counts.person || 0,
+            counts.car || 0,
+            counts.truck || 0
+          ]);
+        }
+      };
+
+      // --- CAM-FEED LOCAL SIMULATION LOOP ---
+      useEffect(() => {
+        if (!simulationActive) return;
+
+        let frameId;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        // Preset Dimensions
+        const width = 1280;
+        const height = 720;
+        canvas.width = width;
+        canvas.height = height;
+
+        // Video Restricted Zone Coordinates (mapped to match screen bounds)
+        const zoneX1 = 800;
+        const zoneY1 = 150;
+        const zoneWidth = 420;
+        const zoneHeight = 420;
+
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let fpsCounter = 30;
+
+        const runSim = () => {
+          frameCount++;
+
+          // Calculate Local FPS
+          const now = performance.now();
+          const delta = now - lastTime;
+          if (delta >= 1000) {
+            fpsCounter = Math.round((frameCount * 1000) / delta * 10) / 10;
+            frameCount = 0;
+            lastTime = now;
+          }
+
+          // Clear Canvas with Security Camera Filter
+          ctx.fillStyle = '#05070f';
+          ctx.fillRect(0, 0, width, height);
+
+          // Grid Overlay
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.05)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < width; x += 60) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+          }
+          for (let y = 0; y < height; y += 60) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+          }
+
+          // Draw Restricted Zone
+          const isZoneVioloated = simTargets.current.some(t => t.score >= 50);
+          ctx.strokeStyle = isZoneVioloated ? 'rgba(239, 68, 68, 0.8)' : 'rgba(239, 68, 68, 0.4)';
+          ctx.lineWidth = isZoneVioloated ? 4 : 2;
+          ctx.setLineDash(isZoneVioloated ? [15, 5] : [5, 5]);
+          ctx.strokeRect(zoneX1, zoneY1, zoneWidth, zoneHeight);
+          ctx.setLineDash([]);
+
+          // Zone text
+          ctx.fillStyle = isZoneVioloated ? '#ef4444' : 'rgba(239, 68, 68, 0.8)';
+          ctx.font = 'bold 18px Inter';
+          ctx.fillText("RESTRICTED AREA SEC-B", zoneX1 + 10, zoneY1 + 30);
+
+          // Move and Draw Targets
+          let currentMaxScore = 0;
+          let pCount = 0, cCount = 0, tCount = 0;
+          const updatedTargets = simTargets.current.map(target => {
+            // Move target
+            let x = target.x + target.vx;
+            let y = target.y + target.vy;
+
+            // Bouncing logic to stay within bounds
+            let vx = target.vx;
+            let vy = target.vy;
+
+            if (x < 50 || x > width - 150) vx = -vx;
+            if (y < 100 || y > height - 100) vy = -vy;
+
+            // Keep track history
+            const history = [...target.history, [x, y]];
+            if (history.length > 30) history.shift();
+
+            // Predict trajectory line (10 future points)
+            const path = [];
+            for (let i = 1; i <= 10; i++) {
+              path.push([x + vx * i * 3, y + vy * i * 3]);
+            }
+
+            // Calculate Threat Score based on future path proximity to zone
+            let entersZone = false;
+            path.forEach(([px, py]) => {
+              if (px >= zoneX1 && px <= zoneX1 + zoneWidth && py >= zoneY1 && py <= zoneY1 + zoneHeight) {
+                entersZone = true;
+              }
+            });
+
+            let score = 5;
+            if (entersZone) {
+              score = target.type === 'person' ? 78 : target.type === 'car' ? 88 : 62;
+            } else {
+              // Base scores based on distance
+              const distToCenter = Math.hypot(x - (zoneX1 + zoneWidth/2), y - (zoneY1 + zoneHeight/2));
+              score = Math.max(5, Math.round(100 - distToCenter / 10));
+            }
+
+            if (score > currentMaxScore) currentMaxScore = score;
+            
+            // Stats increments
+            if (target.type === 'person') pCount++;
+            if (target.type === 'car') cCount++;
+            if (target.type === 'truck') tCount++;
+
+            // Draw Past History (Green Line)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
+            ctx.lineWidth = 2;
+            if (history.length > 0) {
+              ctx.moveTo(history[0][0], history[0][1]);
+              for (let i = 1; i < history.length; i++) {
+                ctx.lineTo(history[i][0], history[i][1]);
+              }
+              ctx.stroke();
+            }
+
+            // Draw Trajectory Prediction (Blue/Cyan dotted line)
+            ctx.beginPath();
+            ctx.strokeStyle = entersZone ? '#ef4444' : '#3b82f6';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 4]);
+            ctx.moveTo(x, y);
+            path.forEach(([px, py]) => ctx.lineTo(px, py));
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw Bounding Box
+            const boxWidth = target.type === 'person' ? 50 : target.type === 'car' ? 120 : 160;
+            const boxHeight = target.type === 'person' ? 120 : target.type === 'car' ? 70 : 100;
+            const rx = x - boxWidth / 2;
+            const ry = y - boxHeight / 2;
+
+            ctx.strokeStyle = score >= 50 ? '#ef4444' : '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(rx, ry, boxWidth, boxHeight);
+
+            // Bounding Box Label
+            ctx.fillStyle = score >= 50 ? '#ef4444' : '#3b82f6';
+            ctx.fillRect(rx, ry - 24, boxWidth, 24);
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Orbitron';
+            ctx.fillText(`${target.type.toUpperCase()} #${target.id} [${score}%]`, rx + 5, ry - 7);
+
+            return { ...target, x, y, vx, vy, history, path, score };
+          });
+
+          simTargets.current = updatedTargets;
+
+          // Simulated Threat triggers alerts/logs
+          const nowStr = new Date().toLocaleTimeString();
+          updatedTargets.forEach(t => {
+            if (t.score >= 50 && Math.random() < 0.015) {
+              // Add threat log
+              setThreatLogs(prev => {
+                const alreadyExists = prev.some(log => log.trackId === t.id && Math.abs(new Date(log.time) - new Date()) < 10000);
+                if (alreadyExists) return prev;
+                return [
+                  {
+                    time: new Date().toLocaleTimeString(),
+                    trackId: t.id,
+                    objectType: t.type,
+                    threatScore: t.score,
+                    status: "ALERT TRIGGERED"
+                  },
+                  ...prev.slice(0, 14)
+                ];
+              });
+
+              // Add Email Log
+              setEmailLogs(prev => {
+                const alreadyExists = prev.some(email => email.id === t.id);
+                if (alreadyExists) return prev;
+                return [
+                  {
+                    id: t.id,
+                    recipient: "security-ops@cybersec.org",
+                    time: new Date().toLocaleTimeString(),
+                    status: "SENT"
+                  },
+                  ...prev.slice(0, 4)
+                ];
+              });
+
+              // Trigger Simulated Screenshot Thumbnail
+              const tempCanvas = document.createElement('canvas');
+              tempCanvas.width = 120;
+              tempCanvas.height = 70;
+              const tempCtx = tempCanvas.getContext('2d');
+              tempCtx.drawImage(canvas, 0, 0, 120, 70);
+              setLatestScreenshot(tempCanvas.toDataURL());
+            }
+          });
+
+          // Overlay HUD details on main feed
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(10, 10, 220, 75);
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+          ctx.strokeRect(10, 10, 220, 75);
+
+          ctx.fillStyle = '#fff';
+          ctx.font = '12px Orbitron';
+          ctx.fillText(`CAMERA: SEC-BUILDING-2`, 20, 30);
+          ctx.fillText(`FPS: ${fpsCounter}`, 20, 48);
+          ctx.fillText(`SIMULATED TELEMETRY`, 20, 66);
+
+          // Top Header Alert Banner on Camera Feed
+          if (isZoneVioloated) {
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+            ctx.fillRect(0, 0, width, 50);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 22px Orbitron';
+            ctx.textAlign = 'center';
+            ctx.fillText("⚠️ CRITICAL THREAT DETECTED ⚠️", width / 2, 33);
+            ctx.textAlign = 'left';
+          }
+
+          // Update general React statistics state
+          setStats({
+            activeObjects: updatedTargets.length,
+            persons: pCount,
+            cars: cCount,
+            trucks: tCount,
+            activeThreats: updatedTargets.filter(t => t.score >= 50).length,
+            maxThreatScore: currentMaxScore,
+            fps: fpsCounter
+          });
+
+          // Feed into ApexCharts
+          updateLiveCharts(currentMaxScore, { person: pCount, car: cCount, truck: tCount });
+
+          frameId = requestAnimationFrame(runSim);
+        };
+
+        runSim();
+
+        return () => cancelAnimationFrame(frameId);
+      }, [simulationActive]);
+
+      // Handle Fullscreen screenshot view
+      const handleScreenshotClick = () => {
+        if (latestScreenshot) setShowLightbox(true);
+      };
+
+      return (
+        <div className="flex-grow flex flex-col p-4 space-y-4 max-w-[1600px] mx-auto w-full">
+          {/* Header Panel */}
+          <header className="glass-card rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between border-cyber-border relative overflow-hidden">
+            {/* Glow background strip */}
+            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-cyber-blue via-cyber-red to-cyber-cyan"></div>
+            
+            <div className="flex items-center space-x-3 mb-2 md:mb-0">
+              <div className="w-10 h-10 rounded-xl bg-cyber-blue/10 flex items-center justify-center border border-cyber-blue/30 text-cyber-blue relative">
+                <span className="absolute inset-0 rounded-xl bg-cyber-blue/20 animate-ping"></span>
+                <Icons.Shield />
+              </div>
+              <div>
+                <h1 className="text-xl md:text-2xl font-black font-mono tracking-widest bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+                  AI THREAT SURVEILLANCE
+                </h1>
+                <p className="text-xs text-cyber-blue font-mono font-semibold tracking-wider">SECURE WATCH TIER 1</p>
+              </div>
+            </div>
+
+            {/* Simulation Warning Banner */}
+            {simulationActive && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-1 flex items-center space-x-2 text-yellow-500 text-xs font-semibold animate-pulse">
+                <span>⚠️ Standalone Simulation Mode</span>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-6 text-sm font-mono">
+              <div className="hidden sm:flex flex-col text-right">
+                <span className="text-gray-400 text-xs">UTC SECURITY NODE</span>
+                <span className="font-semibold text-gray-200">{currentDateTime}</span>
+              </div>
+              <div className="flex items-center space-x-2 bg-black/40 border border-cyber-border rounded-xl px-4 py-2">
+                <span className={`w-2.5 h-2.5 rounded-full pulse-dot ${wsStatus === "CONNECTED" ? "bg-cyber-green" : wsStatus === "CONNECTING" ? "bg-yellow-500" : "bg-cyber-red"}`}></span>
+                <span className="font-semibold text-xs tracking-wider text-gray-200">
+                  {wsStatus === "CONNECTED" ? "SOC SYSTEM LIVE" : wsStatus === "CONNECTING" ? "CONNECTING..." : "DISCONNECTED"}
+                </span>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Workspace Layout */}
+          <main className="flex-grow grid grid-cols-1 lg:grid-cols-12 gap-4">
+            
+            {/* Left Panel: Camera Stream (Large) */}
+            <section className="lg:col-span-8 flex flex-col space-y-4">
+              <div className="glass-card rounded-2xl p-3 border-cyber-border flex-grow flex flex-col relative overflow-hidden">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-2 h-2 bg-cyber-red rounded-full pulse-dot"></span>
+                    <span className="font-mono text-xs font-bold tracking-wider text-gray-300">LIVE FEED: CCTV_NORTH_SEC2</span>
+                  </div>
+                  <div className="flex bg-black/60 rounded-lg p-0.5 border border-cyber-border text-xs font-mono font-semibold">
+                    <button 
+                      onClick={() => { if(isLive) setSimulationActive(false); }}
+                      className={`px-2.5 py-1 rounded-md transition-all ${!simulationActive && isLive ? 'bg-cyber-blue text-white shadow' : 'text-gray-400 cursor-not-allowed opacity-50'}`}
+                      disabled={!isLive}
+                    >
+                      LIVE BACKEND
+                    </button>
+                    <button 
+                      onClick={() => setSimulationActive(true)}
+                      className={`px-2.5 py-1 rounded-md transition-all ${simulationActive ? 'bg-cyber-blue text-white shadow' : 'text-gray-400'}`}
+                    >
+                      LOCAL SIMULATOR
+                    </button>
+                  </div>
+                </div>
+
+                {/* Camera View Area */}
+                <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex-grow flex items-center justify-center border border-cyber-border">
+                  {simulationActive ? (
+                    <canvas ref={canvasRef} className="w-full h-full object-cover"></canvas>
+                  ) : (
+                    liveFrame ? (
+                      <img src={liveFrame} className="w-full h-full object-contain" alt="Live stream from AI CV pipeline" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-gray-500 font-mono space-y-3">
+                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyber-blue"></div>
+                        <span>AWAITING STREAMING FRAMES...</span>
+                      </div>
+                    )
+                  )}
+
+                  {/* Threat Alert Flash */}
+                  {stats.maxThreatScore >= 50 && (
+                    <div className="absolute inset-0 border-4 border-cyber-red pointer-events-none animate-pulse"></div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Right Panel: Controls & Telemetry Stats */}
+            <section className="lg:col-span-4 flex flex-col space-y-4">
+              
+              {/* Threat Status Banner */}
+              <div className={`rounded-2xl p-4 flex items-center justify-between transition-all duration-500 ${stats.maxThreatScore >= 50 ? 'glass-card-alert' : 'glass-card border-cyber-border'}`}>
+                <div className="flex items-center space-x-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stats.maxThreatScore >= 50 ? 'bg-cyber-red/20 text-cyber-red' : 'bg-cyber-green/10 text-cyber-green'}`}>
+                    <Icons.AlertTriangle />
+                  </div>
+                  <div>
+                    <h2 className="text-xs text-gray-400 font-mono tracking-wider">CURRENT SECURITY THREAT SCORE</h2>
+                    <p className={`text-xl font-bold font-mono ${stats.maxThreatScore >= 50 ? 'text-cyber-red' : 'text-cyber-green'}`}>
+                      {stats.maxThreatScore >= 50 ? `CRITICAL [${stats.maxThreatScore}/100]` : `SAFE [${stats.maxThreatScore}/100]`}
+                    </p>
+                  </div>
+                </div>
+                <div className={`px-3 py-1.5 rounded-xl font-mono text-xs font-black tracking-widest uppercase border ${stats.maxThreatScore >= 50 ? 'bg-cyber-red/20 text-cyber-red border-cyber-red/40 animate-pulse' : 'bg-cyber-green/10 text-cyber-green border-cyber-green/30'}`}>
+                  {stats.maxThreatScore >= 50 ? 'THREAT DETECTED' : 'SAFE'}
+                </div>
+              </div>
+
+              {/* Statistics Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                
+                {/* Active Objects */}
+                <div className="glass-card rounded-2xl p-3 border-cyber-border flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-lg bg-cyber-blue/10 border border-cyber-blue/20 flex items-center justify-center text-cyber-blue">
+                    <Icons.Activity />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 font-mono tracking-wider">ACTIVE IDS</p>
+                    <p className="text-lg font-bold font-mono text-gray-100">{stats.activeObjects}</p>
+                  </div>
+                </div>
+
+                {/* Active Threats */}
+                <div className={`glass-card rounded-2xl p-3 flex items-center space-x-3 ${stats.activeThreats > 0 ? 'border-cyber-red/40 bg-cyber-red/5' : 'border-cyber-border'}`}>
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${stats.activeThreats > 0 ? 'bg-cyber-red/20 text-cyber-red animate-pulse' : 'bg-gray-800 text-gray-400'}`}>
+                    <Icons.AlertTriangle />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 font-mono tracking-wider">ACTIVE THREATS</p>
+                    <p className={`text-lg font-bold font-mono ${stats.activeThreats > 0 ? 'text-cyber-red' : 'text-gray-300'}`}>{stats.activeThreats}</p>
+                  </div>
+                </div>
+
+                {/* Persons Detected */}
+                <div className="glass-card rounded-2xl p-3 border-cyber-border flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-lg bg-cyber-cyan/10 border border-cyber-cyan/20 flex items-center justify-center text-cyber-cyan">
+                    <Icons.Users />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 font-mono tracking-wider">PERSONS</p>
+                    <p className="text-lg font-bold font-mono text-gray-100">{stats.persons}</p>
+                  </div>
+                </div>
+
+                {/* Cars Detected */}
+                <div className="glass-card rounded-2xl p-3 border-cyber-border flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-lg bg-cyber-blue/10 border border-cyber-blue/20 flex items-center justify-center text-cyber-blue">
+                    <Icons.Car />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 font-mono tracking-wider">CARS</p>
+                    <p className="text-lg font-bold font-mono text-gray-100">{stats.cars}</p>
+                  </div>
+                </div>
+
+                {/* Trucks Detected */}
+                <div className="glass-card rounded-2xl p-3 border-cyber-border flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                    <Icons.Truck />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 font-mono tracking-wider">TRUCKS</p>
+                    <p className="text-lg font-bold font-mono text-gray-100">{stats.trucks}</p>
+                  </div>
+                </div>
+
+                {/* FPS */}
+                <div className="glass-card rounded-2xl p-3 border-cyber-border flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500">
+                    <span className="font-mono text-xs font-black">Hz</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 font-mono tracking-wider">SYSTEM FPS</p>
+                    <p className="text-lg font-bold font-mono text-gray-100">{stats.fps}</p>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Data & Logs Tabs Component */}
+              <div className="glass-card rounded-2xl border-cyber-border flex-grow flex flex-col overflow-hidden min-h-[300px]">
+                
+                {/* Tabs selection */}
+                <div className="flex border-b border-cyber-border/40 text-xs font-mono font-semibold bg-black/35">
+                  <button 
+                    onClick={() => setActiveTab("logs")}
+                    className={`flex-1 py-3 text-center border-b-2 transition-all ${activeTab === "logs" ? "border-cyber-blue text-cyber-blue bg-cyber-blue/5" : "border-transparent text-gray-400 hover:text-gray-200"}`}
+                  >
+                    THREAT LOGS
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("email")}
+                    className={`flex-1 py-3 text-center border-b-2 transition-all ${activeTab === "email" ? "border-cyber-blue text-cyber-blue bg-cyber-blue/5" : "border-transparent text-gray-400 hover:text-gray-200"}`}
+                  >
+                    EMAIL NOTIFICATIONS
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("screenshot")}
+                    className={`flex-1 py-3 text-center border-b-2 transition-all ${activeTab === "screenshot" ? "border-cyber-blue text-cyber-blue bg-cyber-blue/5" : "border-transparent text-gray-400 hover:text-gray-200"}`}
+                  >
+                    SCREENSHOTS
+                  </button>
+                </div>
+
+                {/* Tab content displays */}
+                <div className="p-3 flex-grow overflow-y-auto max-h-[320px]">
+                  
+                  {activeTab === "logs" && (
+                    <div className="space-y-2">
+                      {threatLogs.length === 0 ? (
+                        <div className="text-gray-500 font-mono text-xs text-center py-10">NO THREAT LOG ENTRIES YET</div>
+                      ) : (
+                        <div className="overflow-x-auto w-full">
+                          <table className="w-full text-left font-mono text-[11px]">
+                            <thead>
+                              <tr className="text-gray-400 border-b border-cyber-border/20 pb-2">
+                                <th className="pb-1.5 font-bold">TIME</th>
+                                <th className="pb-1.5 font-bold">ID</th>
+                                <th className="pb-1.5 font-bold">TYPE</th>
+                                <th className="pb-1.5 font-bold">SCORE</th>
+                                <th className="pb-1.5 font-bold text-right">STATUS</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-cyber-border/10">
+                              {threatLogs.map((log, index) => (
+                                <tr key={index} className={`${log.threatScore >= 50 ? "text-cyber-red font-semibold bg-cyber-red/5" : "text-gray-300"}`}>
+                                  <td className="py-2">{log.time}</td>
+                                  <td className="py-2">#{log.trackId}</td>
+                                  <td className="py-2 uppercase">{log.objectType}</td>
+                                  <td className="py-2">{log.threatScore}%</td>
+                                  <td className="py-2 text-right">
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider border ${log.threatScore >= 50 ? "bg-cyber-red/10 border-cyber-red/30 text-cyber-red" : "bg-gray-800 border-gray-700 text-gray-400"}`}>
+                                      {log.status || "LOGGED"}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "email" && (
+                    <div className="space-y-2 font-mono text-xs">
+                      {emailLogs.length === 0 ? (
+                        <div className="text-gray-500 text-center py-10">NO EMAIL ALERTS DISPATCHED</div>
+                      ) : (
+                        emailLogs.map((email, idx) => (
+                          <div key={idx} className="bg-black/40 border border-cyber-border/40 rounded-xl p-2.5 flex items-center justify-between">
+                            <div className="flex items-center space-x-2.5">
+                              <div className="w-7 h-7 bg-cyber-blue/10 border border-cyber-blue/30 rounded-lg flex items-center justify-center text-cyber-blue">
+                                <Icons.Mail />
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-gray-400">TO: {email.recipient}</p>
+                                <p className="font-semibold text-gray-200 text-[11px]">THREAT OBJECT #{email.id} ALERT</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="px-1.5 py-0.5 bg-cyber-green/10 border border-cyber-green/30 text-cyber-green text-[9px] rounded font-black tracking-wider">
+                                {email.status || "SENT"}
+                              </span>
+                              <p className="text-[9px] text-gray-400 mt-1">{email.time}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "screenshot" && (
+                    <div className="flex flex-col items-center justify-center p-2">
+                      {latestScreenshot ? (
+                        <div className="group relative w-full aspect-video rounded-xl overflow-hidden border border-cyber-border/60 bg-black cursor-pointer" onClick={handleScreenshotClick}>
+                          <img src={latestScreenshot} className="w-full h-full object-cover" alt="Latest captured threat" />
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                            <span className="px-3 py-1 bg-cyber-blue text-white rounded-lg text-xs font-mono font-bold tracking-wider shadow">CLICK TO ENLARGE</span>
+                          </div>
+                          <div className="absolute bottom-2 left-2 bg-cyber-red/80 backdrop-blur text-white px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                            LATEST THREAT SCREENSHOT
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 font-mono text-xs text-center py-10 flex flex-col items-center">
+                          <div className="w-10 h-10 rounded-full bg-gray-800/50 flex items-center justify-center mb-2 text-gray-600">
+                            <Icons.Image />
+                          </div>
+                          <span>NO SCREENSHOTS CAPTURED YET</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+            </section>
+
+          </main>
+
+          {/* Graphics, Charts & Analytics Section */}
+          <section className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            
+            {/* Chart 1: Threat Score Timeline (Line) */}
+            <div className="md:col-span-8 glass-card rounded-2xl p-4 border-cyber-border">
+              <div className="flex items-center space-x-2 mb-2">
+                <div className="text-cyber-red"><Icons.Activity /></div>
+                <h3 className="font-mono text-xs font-bold tracking-wider text-gray-300">THREAT SCORE TIMELINE CHART (PAST 20s)</h3>
+              </div>
+              <div ref={chartTimelineRef} className="w-full min-h-[160px]"></div>
+            </div>
+
+            {/* Chart 2: Object Type Distribution (Donut) */}
+            <div className="md:col-span-4 glass-card rounded-2xl p-4 border-cyber-border">
+              <div className="flex items-center space-x-2 mb-2">
+                <div className="text-cyber-cyan"><Icons.Users /></div>
+                <h3 className="font-mono text-xs font-bold tracking-wider text-gray-300">DETECTION CLASS METRICS</h3>
+              </div>
+              <div ref={chartStatsRef} className="w-full min-h-[160px]"></div>
+            </div>
+
+          </section>
+
+          {/* Footer Status Panel */}
+          <footer className="glass-card rounded-xl p-3 border-cyber-border flex flex-wrap gap-4 items-center justify-between text-xs font-mono text-gray-400">
+            <div className="flex items-center space-x-2">
+              <span className="text-gray-500 font-bold">SYSTEM CONTROL STACK:</span>
+              <span className="text-cyber-blue font-bold">ONLINE</span>
+            </div>
+            
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <div className="flex items-center space-x-1.5">
+                <span className={`w-2 h-2 rounded-full ${services.yoloLoaded ? 'bg-cyber-green' : 'bg-cyber-red animate-pulse'}`}></span>
+                <span>YOLOv8 Model</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className={`w-2 h-2 rounded-full ${services.cameraConnected ? 'bg-cyber-green' : 'bg-cyber-red animate-pulse'}`}></span>
+                <span>Camera Stream</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className={`w-2 h-2 rounded-full ${services.emailActive ? 'bg-cyber-green' : 'bg-cyber-red animate-pulse'}`}></span>
+                <span>Email Service</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className={`w-2 h-2 rounded-full ${services.loggerActive ? 'bg-cyber-green' : 'bg-cyber-red'}`}></span>
+                <span>Threat Logger</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className={`w-2 h-2 rounded-full ${services.screenshotActive ? 'bg-cyber-green' : 'bg-cyber-red'}`}></span>
+                <span>Screenshot Service</span>
+              </div>
+            </div>
+
+            <div className="text-right text-[10px] text-gray-500">
+              BUILD v1.0.4 • DEEPMIND ANTIGRAVITY ENGINE
+            </div>
+          </footer>
+
+          {/* Lightbox for screenshots */}
+          {showLightbox && latestScreenshot && (
+            <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer" onClick={() => setShowLightbox(false)}>
+              <div className="relative max-w-4xl w-full bg-cyber-bg border border-cyber-border rounded-2xl overflow-hidden shadow-2xl p-2 cursor-default" onClick={(e) => e.stopPropagation()}>
+                <button className="absolute top-4 right-4 bg-black/60 hover:bg-cyber-red hover:text-white transition-all text-gray-300 w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-lg" onClick={() => setShowLightbox(false)}>✕</button>
+                <img src={latestScreenshot} className="w-full h-auto rounded-lg" alt="Full size threat screenshot" />
+                <div className="p-3 bg-black/40 text-center font-mono text-xs text-cyber-red">
+                  ⚠️ SECURITY LOG SCREENSHOT CAPTURED - SYSTEM STATE SAVED
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const container = document.getElementById('root');
+    const root = ReactDOM.createRoot(container);
+    root.render(<Dashboard />);
+  </script>
+</body>
+</html>
